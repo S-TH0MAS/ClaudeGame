@@ -101,6 +101,9 @@
             <div class="stat">
                 <strong>Score:</strong> <span id="score">0</span>
             </div>
+            <div class="stat" style="border-color: #FFD700;">
+                <strong>💰 Argent:</strong> <span id="money">0</span>
+            </div>
             <div class="stat">
                 <strong>Poissons:</strong> <span id="fishCount">0</span>
             </div>
@@ -108,12 +111,41 @@
                 <strong>Temps:</strong> <span id="timer">0</span>s
             </div>
         </div>
+        
+        <div id="upgradePanel" style="margin-top: 15px; background: rgba(0, 0, 0, 0.5); padding: 15px; border-radius: 10px; border: 2px solid #FFD700;">
+            <h3 style="color: #FFD700; margin-bottom: 10px; font-size: 18px;">⚡ AMÉLIORATIONS</h3>
+            <div style="display: flex; gap: 10px; justify-content: center; align-items: center; flex-wrap: wrap;">
+                <div style="background: rgba(255, 255, 255, 0.1); padding: 10px; border-radius: 5px; flex: 1; min-width: 250px; max-width: 350px;">
+                    <div style="color: white; margin-bottom: 5px; font-size: 14px;">
+                        🎣 <strong>Longueur de ligne</strong>
+                    </div>
+                    <div style="color: #aaa; font-size: 12px; margin-bottom: 8px;" id="lineInfo">
+                        Niveau 0/10 - Profondeur: 40m
+                    </div>
+                    <button class="button" id="upgradeLine" onclick="buyUpgrade('lineLength')" style="width: 100%; padding: 8px;">
+                        Améliorer (50💰)
+                    </button>
+                </div>
+                <div style="background: rgba(255, 255, 255, 0.1); padding: 10px; border-radius: 5px; flex: 1; min-width: 250px; max-width: 350px;">
+                    <div style="color: white; margin-bottom: 5px; font-size: 14px;">
+                        🪝 <strong>Solidité de l'hameçon</strong>
+                    </div>
+                    <div style="color: #aaa; font-size: 12px; margin-bottom: 8px;" id="hookInfo">
+                        Niveau 1/10 - Capacité: 30px
+                    </div>
+                    <button class="button" id="upgradeHook" onclick="buyUpgrade('hookStrength')" style="width: 100%; padding: 8px;">
+                        Améliorer (100💰)
+                    </button>
+                </div>
+            </div>
+        </div>
         <div id="instructions">
-            🎮 <strong>CONTRÔLES:</strong> Cliquez dans l'eau pour lancer la ligne | Déplacez la souris horizontalement pour diriger l'hameçon lors de la remontée | Attrapez un maximum de poissons !
+            🎮 <strong>CONTRÔLES:</strong> Cliquez dans l'eau pour lancer la ligne | Déplacez la souris horizontalement pour diriger l'hameçon lors de la remontée<br>
+            💡 <strong>ASTUCE:</strong> Les poissons grossissent avec la profondeur ! Améliorez votre hameçon sinon la ligne cassera ! 🔴
         </div>
         <div style="margin-top: 15px;">
             <button class="button" id="backButton" onclick="window.location.href='../../index.html'">← Retour</button>
-            <button class="button" id="restartButton">🔄 Recommencer</button>
+            <button class="button" id="restartButton" style="background: #ff9800;">🔄 Reset complet</button>
         </div>
     </div>
 

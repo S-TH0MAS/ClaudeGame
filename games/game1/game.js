@@ -21,6 +21,7 @@ let tickAccumulator = 0;
 // ============================================
 const gameState = {
     score: 0,
+    money: 0, // Monnaie du jeu
     fishCaught: 0,
     time: 0,
     tick: 0,
@@ -36,6 +37,44 @@ const gameState = {
     horizontalSpeed: 4,
     mouseX: 400, // Position X de la souris
     targetHookX: 400, // Position cible de l'hameçon
+    cameraY: 0, // Décalage vertical de la caméra
+    targetCameraY: 0, // Position cible de la caméra
+};
+
+// ============================================
+// SYSTÈME D'AMÉLIORATIONS
+// ============================================
+const upgrades = {
+    lineLength: {
+        level: 0,
+        maxLevel: 10,
+        baseCost: 50,
+        baseValue: 400,
+        increment: 200,
+        name: "Longueur de ligne",
+        description: "Pêchez plus profond !",
+        getCost: function() {
+            return Math.floor(this.baseCost * Math.pow(1.5, this.level));
+        },
+        getValue: function() {
+            return this.baseValue + (this.increment * this.level);
+        }
+    },
+    hookStrength: {
+        level: 1,
+        maxLevel: 10,
+        baseCost: 100,
+        baseValue: 30,
+        increment: 15,
+        name: "Solidité de l'hameçon",
+        description: "Capturez des poissons plus gros !",
+        getCost: function() {
+            return Math.floor(this.baseCost * Math.pow(1.6, this.level - 1));
+        },
+        getValue: function() {
+            return this.baseValue + (this.increment * (this.level - 1));
+        }
+    }
 };
 
 // ============================================
@@ -59,22 +98,47 @@ const player = {
 // POISSONS
 // ============================================
 const fishes = [];
-const fishTypes = [
-    { color: '#FF6B6B', size: 15, points: 10, speed: 1.5 },
-    { color: '#4ECDC4', size: 20, points: 20, speed: 1 },
-    { color: '#FFD93D', size: 12, points: 15, speed: 2 },
-    { color: '#95E1D3', size: 25, points: 30, speed: 0.8 },
-    { color: '#F38181', size: 18, points: 25, speed: 1.2 },
+const fishColors = [
+    '#FF6B6B', '#4ECDC4', '#FFD93D', '#95E1D3', '#F38181',
+    '#9B59B6', '#E74C3C', '#2C3E50', '#16A085', '#F39C12',
+    '#8E44AD', '#C0392B', '#D35400', '#27AE60', '#2980B9',
+    '#E67E22', '#1ABC9C', '#34495E', '#7F8C8D', '#BDC3C7'
 ];
 
 function createFish() {
-    const type = fishTypes[Math.floor(Math.random() * fishTypes.length)];
+    // Profondeur max accessible
+    const maxDepth = 150 + upgrades.lineLength.getValue();
+    
+    // Créer un poisson à une profondeur aléatoire
     const startSide = Math.random() > 0.5 ? 'left' : 'right';
+    const fishDepth = 200 + Math.random() * (maxDepth - 200);
+    
+    // La taille du poisson augmente avec la profondeur
+    // Formule : taille de base + bonus selon la profondeur
+    const depthFactor = (fishDepth - 200) / 100; // 0 à ~18
+    const baseSize = 12 + Math.random() * 8; // 12-20
+    const depthBonus = depthFactor * 3; // 0 à ~54
+    const fishSize = Math.floor(baseSize + depthBonus);
+    
+    // Points et argent basés sur la taille
+    const points = Math.floor(fishSize * 2);
+    const money = Math.floor(fishSize * 0.8);
+    
+    // Couleur selon la profondeur
+    const colorIndex = Math.floor((fishDepth - 200) / 100) % fishColors.length;
+    const color = fishColors[colorIndex];
+    
+    // Vitesse inversement proportionnelle à la taille
+    const speed = Math.max(0.3, 2 - (fishSize / 40));
     
     return {
         x: startSide === 'left' ? -50 : canvas.width + 50,
-        y: 200 + Math.random() * 350,
-        ...type,
+        y: fishDepth,
+        size: fishSize,
+        points: points,
+        money: money,
+        color: color,
+        speed: speed,
         direction: startSide === 'left' ? 1 : -1,
         amplitude: 20 + Math.random() * 30,
         frequency: 0.02 + Math.random() * 0.03,
@@ -85,7 +149,8 @@ function createFish() {
 // Initialiser les poissons
 function initFishes() {
     fishes.length = 0;
-    for (let i = 0; i < 8; i++) {
+    const fishCount = 8 + Math.floor(upgrades.lineLength.level * 2);
+    for (let i = 0; i < fishCount; i++) {
         fishes.push(createFish());
     }
 }
@@ -96,7 +161,12 @@ function initFishes() {
 
 // Dessiner le ciel et l'eau
 function drawBackground() {
-    // Ciel
+    ctx.save();
+    
+    // Appliquer la translation de la caméra
+    ctx.translate(0, -gameState.cameraY);
+    
+    // Ciel (toujours visible en haut)
     const skyGradient = ctx.createLinearGradient(0, 0, 0, 150);
     skyGradient.addColorStop(0, '#87CEEB');
     skyGradient.addColorStop(1, '#B0E0E6');
@@ -124,18 +194,20 @@ function drawBackground() {
     ctx.fillStyle = '#1E90FF';
     ctx.fillRect(0, 150, canvas.width, 2);
 
-    // Eau avec dégradé
-    const waterGradient = ctx.createLinearGradient(0, 150, 0, canvas.height);
+    // Eau avec dégradé (étendue selon la profondeur max)
+    const maxWaterDepth = 150 + upgrades.lineLength.getValue() + 200;
+    const waterGradient = ctx.createLinearGradient(0, 150, 0, maxWaterDepth);
     waterGradient.addColorStop(0, '#1E90FF');
-    waterGradient.addColorStop(0.5, '#1873CC');
-    waterGradient.addColorStop(1, '#0D4A8F');
+    waterGradient.addColorStop(0.3, '#1873CC');
+    waterGradient.addColorStop(0.6, '#0D4A8F');
+    waterGradient.addColorStop(1, '#05263D');
     ctx.fillStyle = waterGradient;
-    ctx.fillRect(0, 152, canvas.width, canvas.height - 152);
+    ctx.fillRect(0, 152, canvas.width, maxWaterDepth - 152);
 
     // Vagues (lignes de pixels)
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
     ctx.lineWidth = 1;
-    for (let y = 160; y < canvas.height; y += 40) {
+    for (let y = 160; y < maxWaterDepth; y += 40) {
         ctx.beginPath();
         for (let x = 0; x < canvas.width; x += 8) {
             const waveY = y + Math.sin(x * 0.05 + gameState.tick * 0.05) * 3;
@@ -147,11 +219,22 @@ function drawBackground() {
         }
         ctx.stroke();
     }
+    
+    // Indicateurs de profondeur
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+    ctx.font = '12px Courier New';
+    for (let depth = 200; depth <= maxWaterDepth; depth += 100) {
+        const displayDepth = depth - 150;
+        ctx.fillText(`${displayDepth}m`, 10, depth);
+    }
+    
+    ctx.restore();
 }
 
 // Dessiner la barque (style pixel art)
 function drawBoat() {
     ctx.save();
+    ctx.translate(0, -gameState.cameraY);
     
     // Ombre de la barque
     ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
@@ -183,6 +266,7 @@ function drawBoat() {
 // Dessiner le joueur (pêcheur pixel art)
 function drawPlayer() {
     ctx.save();
+    ctx.translate(0, -gameState.cameraY);
     
     // Tête
     ctx.fillStyle = '#FFD1A3';
@@ -233,6 +317,7 @@ function drawFishingLine() {
     if (gameState.phase === 'idle') return;
     
     ctx.save();
+    ctx.translate(0, -gameState.cameraY);
     ctx.strokeStyle = '#2C3E50';
     ctx.lineWidth = 2;
     ctx.setLineDash([]);
@@ -289,56 +374,92 @@ function drawFish(fish) {
         ctx.scale(-1, 1);
     }
     
+    // Vérifier si ce poisson est trop gros pour l'hameçon actuel
+    const hookCapacity = upgrades.hookStrength.getValue();
+    const isTooLarge = fish.size > hookCapacity;
+    
+    // Aura de danger si le poisson est trop gros
+    if (isTooLarge) {
+        ctx.strokeStyle = 'rgba(255, 0, 0, 0.5)';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.ellipse(0, 0, fish.size + 5, fish.size * 0.6 + 3, 0, 0, Math.PI * 2);
+        ctx.stroke();
+    }
+    
     // Corps du poisson
     ctx.fillStyle = fish.color;
     ctx.beginPath();
     ctx.ellipse(0, 0, fish.size, fish.size * 0.6, 0, 0, Math.PI * 2);
     ctx.fill();
     
-    // Queue
+    // Bordure plus épaisse pour les gros poissons
+    if (fish.size > 30) {
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+    }
+    
+    // Queue (proportionnelle à la taille)
+    const tailSize = Math.max(8, fish.size * 0.3);
     ctx.beginPath();
     ctx.moveTo(-fish.size, 0);
-    ctx.lineTo(-fish.size - 8, -6);
-    ctx.lineTo(-fish.size - 8, 6);
+    ctx.lineTo(-fish.size - tailSize, -tailSize * 0.75);
+    ctx.lineTo(-fish.size - tailSize, tailSize * 0.75);
     ctx.closePath();
     ctx.fill();
     
-    // Nageoires
+    // Nageoires (proportionnelles)
     ctx.beginPath();
     ctx.moveTo(0, -fish.size * 0.6);
-    ctx.lineTo(-3, -fish.size * 0.8);
-    ctx.lineTo(3, -fish.size * 0.6);
+    ctx.lineTo(-fish.size * 0.1, -fish.size * 0.8);
+    ctx.lineTo(fish.size * 0.1, -fish.size * 0.6);
     ctx.closePath();
     ctx.fill();
     
-    // Œil
+    // Œil (proportionnel)
+    const eyeSize = Math.max(4, fish.size * 0.15);
     ctx.fillStyle = '#FFF';
     ctx.beginPath();
-    ctx.arc(fish.size * 0.5, -2, 4, 0, Math.PI * 2);
+    ctx.arc(fish.size * 0.5, -fish.size * 0.1, eyeSize, 0, Math.PI * 2);
     ctx.fill();
     
     ctx.fillStyle = '#000';
     ctx.beginPath();
-    ctx.arc(fish.size * 0.5 + 1, -2, 2, 0, Math.PI * 2);
+    ctx.arc(fish.size * 0.5 + 1, -fish.size * 0.1, eyeSize * 0.5, 0, Math.PI * 2);
     ctx.fill();
     
-    // Écailles (détails pixel art)
+    // Écailles (détails pixel art) - plus pour les gros poissons
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
     ctx.lineWidth = 1;
-    for (let i = -fish.size * 0.5; i < fish.size * 0.5; i += 5) {
+    const scaleSpacing = Math.max(5, fish.size * 0.25);
+    for (let i = -fish.size * 0.5; i < fish.size * 0.5; i += scaleSpacing) {
         ctx.beginPath();
         ctx.arc(i, 0, 3, 0, Math.PI * 2);
         ctx.stroke();
     }
+    
+    // Afficher la taille du poisson au-dessus
+    ctx.scale(fish.direction, 1); // Remettre le texte à l'endroit
+    ctx.fillStyle = isTooLarge ? '#FF0000' : '#FFFFFF';
+    ctx.font = 'bold 12px Courier New';
+    ctx.textAlign = 'center';
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 3;
+    ctx.strokeText(`${fish.size}`, 0, -fish.size - 10);
+    ctx.fillText(`${fish.size}`, 0, -fish.size - 10);
     
     ctx.restore();
 }
 
 // Dessiner tous les poissons
 function drawFishes() {
+    ctx.save();
+    ctx.translate(0, -gameState.cameraY);
     fishes.forEach(fish => {
         drawFish(fish);
     });
+    ctx.restore();
 }
 
 // Dessiner les particules d'eau lors du lancer
@@ -358,11 +479,14 @@ function createSplash(x, y) {
 }
 
 function drawSplashes() {
+    ctx.save();
+    ctx.translate(0, -gameState.cameraY);
     waterSplashes.forEach(splash => {
         const alpha = splash.life / splash.maxLife;
         ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
         ctx.fillRect(splash.x, splash.y, 3, 3);
     });
+    ctx.restore();
 }
 
 // ============================================
@@ -399,18 +523,172 @@ function checkFishCollision() {
         const distance = Math.sqrt(dx * dx + dy * dy);
         
         if (distance < fish.size + 10) {
-            // Poisson attrapé !
+            // Vérifier si l'hameçon est assez solide
+            const hookCapacity = upgrades.hookStrength.getValue();
+            
+            if (fish.size > hookCapacity) {
+                // LIGNE CASSÉE ! Poisson trop gros
+                breakLine(fish);
+                return;
+            }
+            
+            // Poisson attrapé avec succès !
             gameState.score += fish.points;
+            gameState.money += fish.money;
             gameState.fishCaught++;
             updateUI();
             
             // Créer un nouveau poisson
             fishes[index] = createFish();
             
-            // Effet visuel
+            // Effet visuel de capture
             createSplash(fish.x, fish.y);
+            createCatchEffect(fish.x, fish.y, fish.money);
         }
     });
+}
+
+// Effet quand la ligne casse
+function breakLine(fish) {
+    // Animation de rupture
+    gameState.phase = 'broken';
+    
+    // Créer beaucoup de particules
+    for (let i = 0; i < 20; i++) {
+        waterSplashes.push({
+            x: gameState.hookX,
+            y: gameState.hookY,
+            vx: (Math.random() - 0.5) * 8,
+            vy: (Math.random() - 0.5) * 8,
+            life: 40,
+            maxLife: 40,
+        });
+    }
+    
+    // Message d'alerte
+    showWarningMessage(`⚠️ LIGNE CASSÉE ! Poisson trop gros (${fish.size}px) pour votre hameçon (${upgrades.hookStrength.getValue()}px)`);
+    
+    // Retour à idle après un délai
+    setTimeout(() => {
+        gameState.phase = 'idle';
+        gameState.lineLength = 0;
+    }, 1000);
+}
+
+// Effet visuel quand on attrape un poisson
+const catchEffects = [];
+
+function createCatchEffect(x, y, money) {
+    catchEffects.push({
+        x: x,
+        y: y,
+        text: `+${money}💰`,
+        life: 60,
+        maxLife: 60,
+    });
+}
+
+function updateCatchEffects() {
+    for (let i = catchEffects.length - 1; i >= 0; i--) {
+        const effect = catchEffects[i];
+        effect.life--;
+        effect.y -= 1;
+        
+        if (effect.life <= 0) {
+            catchEffects.splice(i, 1);
+        }
+    }
+}
+
+function drawCatchEffects() {
+    ctx.save();
+    ctx.translate(0, -gameState.cameraY);
+    
+    catchEffects.forEach(effect => {
+        const alpha = effect.life / effect.maxLife;
+        ctx.fillStyle = `rgba(255, 215, 0, ${alpha})`;
+        ctx.font = 'bold 20px Courier New';
+        ctx.textAlign = 'center';
+        ctx.fillText(effect.text, effect.x, effect.y);
+    });
+    
+    ctx.restore();
+}
+
+// Messages d'avertissement
+let warningMessage = null;
+let warningTimer = 0;
+
+function showWarningMessage(message) {
+    warningMessage = message;
+    warningTimer = 180; // 3 secondes à 60 FPS
+}
+
+function updateWarningMessage() {
+    if (warningTimer > 0) {
+        warningTimer--;
+        if (warningTimer === 0) {
+            warningMessage = null;
+        }
+    }
+}
+
+function drawWarningMessage() {
+    if (!warningMessage) return;
+    
+    ctx.save();
+    
+    const alpha = Math.min(1, warningTimer / 30);
+    ctx.fillStyle = `rgba(0, 0, 0, ${alpha * 0.7})`;
+    ctx.fillRect(0, 250, canvas.width, 100);
+    
+    ctx.fillStyle = `rgba(255, 69, 0, ${alpha})`;
+    ctx.font = 'bold 16px Courier New';
+    ctx.textAlign = 'center';
+    ctx.fillText(warningMessage, canvas.width / 2, 300);
+    
+    ctx.restore();
+}
+
+// Afficher la capacité de l'hameçon en permanence
+function drawHookCapacityIndicator() {
+    ctx.save();
+    
+    const hookCapacity = upgrades.hookStrength.getValue();
+    
+    // Fond
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+    ctx.fillRect(10, 10, 180, 50);
+    
+    // Bordure
+    ctx.strokeStyle = '#4CAF50';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(10, 10, 180, 50);
+    
+    // Icône hameçon
+    ctx.strokeStyle = '#C0C0C0';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(25, 35, 5, 0, Math.PI);
+    ctx.stroke();
+    
+    ctx.beginPath();
+    ctx.moveTo(30, 35);
+    ctx.lineTo(30, 40);
+    ctx.lineTo(28, 38);
+    ctx.stroke();
+    
+    // Texte
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = 'bold 14px Courier New';
+    ctx.textAlign = 'left';
+    ctx.fillText('🪝 Capacité:', 40, 28);
+    
+    ctx.fillStyle = '#4CAF50';
+    ctx.font = 'bold 18px Courier New';
+    ctx.fillText(`${hookCapacity} px`, 40, 48);
+    
+    ctx.restore();
 }
 
 // Lancer la ligne
@@ -422,9 +700,13 @@ function castLine(targetX) {
     gameState.lineLength = 0;
     gameState.hookX = player.x + 25;
     gameState.hookY = player.y - 10;
+    
+    // Calculer la profondeur cible selon l'amélioration
+    const maxDepth = 150 + upgrades.lineLength.getValue();
+    
     gameState.castTarget = {
         x: targetX,
-        y: 550,
+        y: maxDepth,
         startX: player.x + 25,
         startY: player.y - 10
     };
@@ -469,7 +751,23 @@ function updateFishing() {
 
 // Remonter la ligne
 function updateReeling() {
-    if (gameState.phase !== 'reeling') return;
+    if (gameState.phase !== 'reeling' && gameState.phase !== 'broken') return;
+    
+    // Si la ligne est cassée, juste remonter sans attraper
+    if (gameState.phase === 'broken') {
+        const rodTipX = player.x + 25;
+        const rodTipY = player.y - 10;
+        
+        const dyToRod = rodTipY - gameState.hookY;
+        const dxToRod = rodTipX - gameState.hookX;
+        const distanceToRod = Math.sqrt(dxToRod * dxToRod + dyToRod * dyToRod);
+        
+        if (distanceToRod > 5) {
+            gameState.hookX += (dxToRod / distanceToRod) * gameState.reelSpeed;
+            gameState.hookY += (dyToRod / distanceToRod) * gameState.reelSpeed;
+        }
+        return;
+    }
     
     const rodTipX = player.x + 25;
     const rodTipY = player.y - 10;
@@ -518,6 +816,29 @@ function updateSplashes() {
     }
 }
 
+// Mettre à jour la caméra pour suivre l'hameçon
+function updateCamera() {
+    // Calculer la position cible de la caméra
+    if (gameState.phase === 'casting' || gameState.phase === 'fishing' || gameState.phase === 'reeling' || gameState.phase === 'broken') {
+        // Suivre l'hameçon si il descend sous une certaine profondeur
+        const hookDepth = gameState.hookY - 150; // Profondeur relative à la surface
+        
+        if (hookDepth > 250) {
+            // Centrer la caméra sur l'hameçon
+            gameState.targetCameraY = hookDepth - 250;
+        } else {
+            gameState.targetCameraY = 0;
+        }
+    } else {
+        // Retour en position normale
+        gameState.targetCameraY = 0;
+    }
+    
+    // Interpolation douce de la caméra
+    const cameraSpeed = 0.1;
+    gameState.cameraY += (gameState.targetCameraY - gameState.cameraY) * cameraSpeed;
+}
+
 // ============================================
 // GESTION DES ÉVÉNEMENTS
 // ============================================
@@ -551,8 +872,66 @@ gameState.mouseX = canvas.width / 2;
 
 function updateUI() {
     document.getElementById('score').textContent = gameState.score;
+    document.getElementById('money').textContent = gameState.money;
     document.getElementById('fishCount').textContent = gameState.fishCaught;
     document.getElementById('timer').textContent = Math.floor(gameState.tick / TICK_RATE);
+    
+    // Mettre à jour les boutons d'amélioration
+    updateUpgradeButtons();
+}
+
+function updateUpgradeButtons() {
+    // Mise à jour bouton longueur de ligne
+    const lineLengthBtn = document.getElementById('upgradeLine');
+    const lineUpgrade = upgrades.lineLength;
+    
+    if (lineUpgrade.level >= lineUpgrade.maxLevel) {
+        lineLengthBtn.textContent = `✓ MAX`;
+        lineLengthBtn.disabled = true;
+    } else {
+        const cost = lineUpgrade.getCost();
+        lineLengthBtn.textContent = `Améliorer (${cost}💰)`;
+        lineLengthBtn.disabled = gameState.money < cost;
+    }
+    
+    document.getElementById('lineInfo').textContent = 
+        `Niveau ${lineUpgrade.level}/${lineUpgrade.maxLevel} - Profondeur: ${Math.floor(lineUpgrade.getValue() / 10)}m`;
+    
+    // Mise à jour bouton hameçon
+    const hookBtn = document.getElementById('upgradeHook');
+    const hookUpgrade = upgrades.hookStrength;
+    
+    if (hookUpgrade.level >= hookUpgrade.maxLevel) {
+        hookBtn.textContent = `✓ MAX`;
+        hookBtn.disabled = true;
+    } else {
+        const cost = hookUpgrade.getCost();
+        hookBtn.textContent = `Améliorer (${cost}💰)`;
+        hookBtn.disabled = gameState.money < cost;
+    }
+    
+    document.getElementById('hookInfo').textContent = 
+        `Niveau ${hookUpgrade.level}/${hookUpgrade.maxLevel} - Capacité: ${hookUpgrade.getValue()}px`;
+}
+
+function buyUpgrade(upgradeName) {
+    const upgrade = upgrades[upgradeName];
+    
+    if (upgrade.level >= upgrade.maxLevel) return;
+    
+    const cost = upgrade.getCost();
+    if (gameState.money >= cost) {
+        gameState.money -= cost;
+        upgrade.level++;
+        
+        // Mettre à jour la longueur max de la ligne
+        gameState.maxLineLength = upgrade.getValue();
+        
+        // Réinitialiser les poissons pour avoir de nouveaux types
+        initFishes();
+        
+        updateUI();
+    }
 }
 
 // ============================================
@@ -569,8 +948,13 @@ function updateGameLogic() {
     updateFishing();
     updateReeling();
     
-    // Mettre à jour les particules
+    // Mettre à jour les particules et effets
     updateSplashes();
+    updateCatchEffects();
+    updateWarningMessage();
+    
+    // Mettre à jour la caméra
+    updateCamera();
     
     // Incrémenter le compteur de ticks
     gameState.tick++;
@@ -593,6 +977,9 @@ function renderGame() {
     drawPlayer();
     drawFishingLine();
     drawSplashes();
+    drawCatchEffects();
+    drawWarningMessage();
+    drawHookCapacityIndicator();
 }
 
 // Boucle principale avec système de ticks
@@ -632,17 +1019,36 @@ function gameLoop(currentTime) {
 // INITIALISATION
 // ============================================
 
-function initGame() {
-    gameState.score = 0;
-    gameState.fishCaught = 0;
-    gameState.time = 0;
+function initGame(fullReset = false) {
     gameState.tick = 0;
     gameState.phase = 'idle';
     gameState.isPlaying = true;
+    gameState.cameraY = 0;
+    gameState.targetCameraY = 0;
+    
+    if (fullReset) {
+        // Reset complet uniquement si demandé
+        gameState.score = 0;
+        gameState.money = 0;
+        gameState.fishCaught = 0;
+        gameState.time = 0;
+        
+        // Réinitialiser les améliorations
+        upgrades.lineLength.level = 0;
+        upgrades.hookStrength.level = 1;
+    }
+    
+    gameState.maxLineLength = upgrades.lineLength.getValue();
     
     // Réinitialiser le système de ticks
     lastTickTime = 0;
     tickAccumulator = 0;
+    
+    // Vider les effets
+    catchEffects.length = 0;
+    waterSplashes.length = 0;
+    warningMessage = null;
+    warningTimer = 0;
     
     initFishes();
     updateUI();
@@ -650,8 +1056,13 @@ function initGame() {
 
 // Bouton de redémarrage
 document.getElementById('restartButton').addEventListener('click', () => {
-    initGame();
+    if (confirm('Voulez-vous vraiment tout réinitialiser ? Vous perdrez toutes vos améliorations !')) {
+        initGame(true);
+    }
 });
+
+// Exposer buyUpgrade globalement pour le onclick
+window.buyUpgrade = buyUpgrade;
 
 // Démarrer le jeu
 initGame();
