@@ -1,0 +1,53 @@
+# Nom du workflow
+name: Deploy Vite App to GitHub Pages
+
+# Déclencheur : se lance à chaque push sur la branche "master"
+on:
+  push:
+    branches: [ "master" ]
+
+# Permissions requises pour le déploiement sur GitHub Pages
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Tâches à exécuter
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      # 1. Récupère le code de votre dépôt
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2. Met en place Node.js (version 20 est un bon choix stable)
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # 3. Installe les dépendances du projet
+      - name: Install dependencies
+        run: npm install
+
+      # 4. Construit l'application (exécute "tsc && vite build")
+      - name: Build project
+        run: npm run build
+
+      # 5. Configure GitHub Pages
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      # 6. Prépare le dossier "dist" pour le déploiement
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          # Spécifie le dossier à déployer
+          path: './dist'
+
+      # 7. Déploie le site sur GitHub Pages
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
